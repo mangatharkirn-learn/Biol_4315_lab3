@@ -24,3 +24,221 @@ You can add options to executable code like this
 ```
 
 The `echo: false` option disables the printing of code (only output is displayed).
+
+Question 1:
+
+- Q: Based on that, would you expect to have a complete genome? Would you say that the coverage is adequate?
+
+  - No, as the mean coverage is low, indicating on average each base is represented by 6 different reads.
+
+line 1: Install tidyverse (for file manipulation and extraction)
+
+line 2: Read in log file into vector that can be parsed.
+
+line 3: Create a tibble to tabulate the statistics found at the end of the document.
+
+- show length of assembly
+
+- N50
+
+- number of contigs
+
+- largest contig
+
+- coverage
+
+```{r}
+#| echo: false
+library(tidyverse)
+summary_stats <- read_lines("outputs/flye_output/flye.log")
+
+alignment_stats <- tibble(
+  `Total assembly length` = str_extract(
+    tail(summary_stats[str_detect(summary_stats, "Total length")], 1),
+    "\\d+"),
+`N50` = str_extract(
+  summary_stats[str_detect(summary_stats, "^\\s*Fragments N50:")],
+  "\\d+"),
+`Number of contigs` = str_extract(
+  summary_stats[str_detect(summary_stats, "^\\s*Fragments")],
+  "\\d+"),
+`Largest contig` = str_extract(
+  tail(summary_stats[str_detect(summary_stats, "Largest frg")], 1),
+  "\\d+"),
+`Coverage` = str_extract(
+  tail(summary_stats[str_detect(summary_stats, "Mean coverage")], 1),
+  "\\d+(\\.\\d+)?")
+) %>%
+    mutate(across(everything(), as.numeric))
+
+```
+
+Question 2:
+
+The `BUSCO` reports should be found under `outputs/busco_output`. Open the text file with lineage specific results, and answer the following:
+
+- What were the `BUSCO` scores? Given the coverage do you think they are good (2 marks)?
+
+  - The busco score is **C**omplete:42.8% \[**S**ingle-copy:42.7%, **D**uplicated:0.1%\], **F**ragmented:0.6%, **M**issing:56.6.
+
+  - Based on the low mean coverage of 6x the low BUSCO completeness of 42.8% is not good as almost 56.6% of the genome is missing.
+
+- What was the N50 compared to the `flye` calculated one (1 mark)?
+
+  - BUSCO calculated N50 is relatively close to the flye calculated one. BUSCO seems rounded with value as 28 kbp, while flye is the whole number 28892 bps.
+
+- What was the total assembly length (1 mark)?
+
+  - total assembly length is 10038806 bps.
+
+Question 3:
+
+Open the `quast` report:
+
+- What was the genome fraction how does it compare to `BUSCO` (2 marks)?
+
+  - Genome fraction is 4.924% indicates the percentage of the reference genome that is covered by assembly, while Busco gives insight into the expected amount of conserved genes found in the assembly. They provide different context into the assembly.
+
+- What was the duplication ratio (1 mark)?
+
+  - 1.017
+
+- What was the level of misassemblies and what is the length of the misassembled contigs? **What does it tell you about how well the reference genome represents the genomic diversity of the species *S. cerevisiae*** (3 marks)?
+
+  - The level of misassemblies is 2, and the length of the misassembled contigs is 102 152 bp. This means QUAST identified 2 locations where the assembled genome disagrees with the reference genome for a length of 102 125 bps of the assembled sequence. These values do not provide sufficient information to interpret genomic diversity as the reason why there is a misassembly needs to be further investigated between technical error or true biological insight.
+
+Question 4:
+
+```{r}
+# value header_lines and ygen created during 5.1 reference download and prep. 
+
+# Safety Check: Yeast has 16 nuclear chromosomes + 1 mitochondrial
+if(length(header_lines) == 17) {
+  if (ygen[header_lines[1]] == ">chrI") {
+
+    # chr1 contains only chromsome 1 sequence 
+    chrI <- ygen[header_lines[1]:(header_lines[2] - 1)]
+    
+    writeLines(chrI, "data/R64_chr1.fna")
+    
+    message("SUCCESS: chrI has been found and extracted.")
+  }
+} else {
+  stop("Error: Chromosome count mismatch! Check your input file.")
+}
+```
+
+Question 5:
+
+```{r}
+#| echo: false
+# BAM file path
+bam_file <- "outputs/alignment.sorted.bam"
+
+# Open connection to BAM file
+bam <- BamFile(bam_file)
+
+# Read all alignments
+alns <- readGAlignments(bam)
+
+# Convert to GRanges object
+gr_alns <- granges(alns)
+
+aln_track <- AnnotationTrack(gr_alns, name = "Contigs", genome = "sacCer3", chromosome = "chrI")
+
+# Add genome axis for scale
+axis_track <- GenomeAxisTrack()
+
+# Plot to visualize the alignment
+plotTracks(list(axis_track, aln_track),
+           from = min(start(gr_alns)),
+           to = max(end(gr_alns)),
+           main = "Contig Alignments to Chromosome 1")
+```
+
+- How many contigs did you have aligning to chromosome 1 (1 mark)?
+
+  - **Difficult to accurately tell from the plot the number of contigs.**
+
+- Using the functions `range()` and `ranges()` try and estimate how much of chromosome 1 does your contigs cover, is it in line with the alignment results reported by `QUAST` (2 marks)?
+
+  ```{r}
+  # Find the start and end boundaries of all mapped contigs combined
+  range(gr_alns)
+
+  # Peek at the individual contig boundaries
+  ranges(gr_alns)
+
+  # calcuate the total number of bp in ranges
+  sum(width(reduce(ranges(gr_alns))))
+
+  # Calculate the total number of bp in range 
+  width(range(gr_alns))
+  ```
+
+  - range() function reveals overall chromosome 1 spans 147 337 bp, while ranges() reveals the actual coverage within the span is a total of around 17016 bp. Compared to QUAST, the BAM alignment results are not in line with report.
+
+- Make sure to have the plot in your document (1 mark).
+
+Question 6:
+
+```{r}
+# Path to file consensus.fasta
+consensus_path <- "outputs/medaka_round2/consensus.fasta"
+
+# read in contigs
+contigsChrI <- readDNAStringSet(consensus_path)
+
+# filter chromsome 1 file for longest contig
+longest_contig <- contigsChrI[which.max(width(contigsChrI))]
+
+# write and output longest contig 
+writeXStringSet(
+  longest_contig,
+  "outputs/longest_contig.fasta"
+)
+
+```
+
+Question 7:
+
+Step 1: Convert SAM file into indexed BAM file for visualization
+
+```{bash}
+samtools view -bS outputs/cds_aln.sam > outputs/cds_aln.bam
+samtools sort outputs/cds_aln.bam -o outputs/cds_aln.sorted.bam
+samtools index outputs/cds_aln.sorted.bam
+```
+
+Question 8:
+
+```{r}
+#| echo: false
+# BAM file path
+bam_file8 <- "outputs/cds_aln.sorted.bam"
+
+# Open connection to BAM file
+bam8 <- BamFile(bam_file8)
+
+# Read all alignments
+alns8 <- readGAlignments(bam8)
+
+# Convert to GRanges object
+gr_alns8 <- granges(alns8)
+
+# Plot alignments against your contig reference
+options(ucscChromosomeNames = FALSE)
+
+aln_track8 <- AnnotationTrack(gr_alns8, name = "Contigs", genome = "sacCer3", chromosome = "chrI")
+
+# Add genome axis for scale
+axis_track8 <- GenomeAxisTrack()
+
+# Plot to visualize the alignment
+plotTracks(list(axis_track8, aln_track8),
+           from = min(start(gr_alns8)),
+           to = max(end(gr_alns8)),
+           main = "Contig Alignments to Chromosome 1")
+
+options(ucscChromosomeNames = TRUE)
+```
