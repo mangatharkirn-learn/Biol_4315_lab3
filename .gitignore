@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+data/
+ouputs/
+outputs/R64_chr1.fna
+outputs/cds_aln.bam
+outputs/cds_aln.sorted.bam
+outputs/cds_aln.sorted.bam/bai
+!outputs/longest_contig.fasta
